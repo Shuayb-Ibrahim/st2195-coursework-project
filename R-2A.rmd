@@ -1,0 +1,147 @@
+---
+title: "ST2195 Coursework Part 2A"
+author: "Shuayb Ibrahim"
+output: pdf_document
+---
+
+```{r}
+#imports
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+```
+
+```{r}
+paths <- lapply(seq(1995,2004,1), function(year) paste0("dataset/",year,".csv"))
+df <- do.call(rbind,lapply(paths,read.csv))
+```
+
+### Pre-Processing
+
+```{r}
+delays <- df[,c('Year','DayOfWeek','CRSDepTime','DepTime','DepDelay','CRSArrTime','ArrTime','ArrDelay')]
+head(delays)
+```
+
+```{r}
+summary(delays)
+```
+
+```{r}
+sapply(delays, function(col) sum(is.na(col)))
+```
+
+```{r}
+cancelled <- sum(df$Cancelled)
+diverted <- sum(df$Diverted)
+
+print(paste("Total Cancelled Flights:", cancelled))
+print(paste("Total Cancelled/Diverted Flights:", cancelled + diverted))
+```
+
+```{r}
+delays <- delays |> drop_na()
+sapply(delays, function(col) sum(is.na(col)))
+```
+
+```{r}
+length(delays[which(delays$ArrDelay ==0), ]$ArrDelay)
+delays[which(delays$ArrDelay <0), ]$ArrDelay <- 0
+
+length(delays[which(delays$ArrDelay ==0), ]$ArrDelay)
+delays[which(delays$ArrDelay <0), ]
+```
+
+### Best Days of The Week to Minimise Delays by Year
+
+```{r}
+highlight_min_values <- function(data) {
+  rows <- c()
+  cols <- c()
+
+  for (year in unique(data$Year)) {
+    min_val <- min(data[which(data$Year==year), 'AvgDelay'])
+    rows <- rows |> c(data[which(data$AvgDelay==min_val), ]$Time)
+    cols <- cols |> c(data[which(data$AvgDelay==min_val), ]$Year)
+  }
+  return(data.frame(cbind(rows,cols)))
+}
+```
+
+```{r}
+data <- delays |>  select(Year,DayOfWeek,ArrDelay) |>
+  group_by(Year,DayOfWeek) |> summarise(AvgDelay = mean(ArrDelay),.groups = "drop") |> rename(Time=DayOfWeek)
+```
+
+
+```{r}
+mat <- highlight_min_values(data) 
+
+mat$rows <- as.factor(mat$rows)
+mat$cols <- as.factor(mat$cols)
+
+data$Year <- as.factor(data$Year)
+data$Time <- as.factor(data$Time)
+```
+
+
+```{r}
+data |> rename(DayOfWeek = Time) |> ggplot(aes(Year, reorder(DayOfWeek,desc(as.integer(DayOfWeek))))) +
+  geom_tile(aes(fill = AvgDelay), color = "white") +
+  scale_fill_gradient(low = "white", high = "steelblue", name = "Average \nDelay in \nMinutes") +
+  scale_y_discrete(
+    breaks = c("1", "2", "3","4","5","6","7"),  # Specify y-tick positions
+    labels = c("Monday", "Tuesday", "Wednesday","Thursday","Friday","Saturday","Sunday")  # Custom labels
+  ) +
+  geom_tile(data = mat, aes(cols, rows), color = "purple", fill = NA, linewidth = 1.5) +
+  geom_text(aes(label = sprintf("%.2f", AvgDelay)), color = "black", size = 4) +
+  labs(title = "Best Days of The Week to Minimise Delays Between 1995 and 2004",y="Day of The Week") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.title = element_text(size = 10))
+```
+
+### Best Times to Minimise Delays by Year
+
+```{r}
+rm(data)
+data <- delays |> select(Year, ArrDelay, CRSDepTime) |> 
+  mutate(TimeOfDay = case_when(
+  CRSDepTime<=400 ~ 1,
+  CRSDepTime<=800 ~ 2,
+  CRSDepTime<=1200 ~ 3,
+  CRSDepTime<=1500 ~ 4,
+  CRSDepTime<=1800 ~ 5,
+  CRSDepTime<=2100 ~ 6,
+  CRSDepTime<=2400 ~ 7,
+  TRUE ~ NA
+)) |> select(-contains("CRS")) |> group_by(Year,TimeOfDay) |> 
+  summarise(AvgDelay = mean(ArrDelay),.groups = "drop") |> rename(Time=TimeOfDay)
+```
+
+```{r}
+rm(mat)
+mat <- highlight_min_values(data) 
+
+mat$rows <- as.factor(mat$rows)
+mat$cols <- as.factor(mat$cols)
+
+data$Year <- as.factor(data$Year)
+data$Time <- as.factor(data$Time)
+```
+
+```{r}
+ggplot(data, aes(Year, reorder(Time,desc(as.integer(Time))))) +
+  geom_tile(aes(fill = AvgDelay), color = "white") +
+  scale_fill_gradient(low = "white", high = "steelblue", name = "Average \nDelay in \nMinutes") +
+  scale_y_discrete(
+    breaks = c("1", "2", "3","4","5","6","7"),  # Specify y-tick positions
+    labels = c("Late Night", "Early Morning", "Late Morning","Early Afternoon",
+               "Late Afternoon","Early Evening","Late Evening")  # Custom labels
+  ) +
+  geom_tile(data = mat, aes(cols, rows), color = "purple", fill = NA, linewidth = 1.5) +
+  geom_text(aes(label = sprintf("%.2f", AvgDelay)), color = "black", size = 4) +
+  labs(title = "Best Days of The Week to Minimise Delays Between 1995 and 2004",y="Day of The Week") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.title = element_text(size = 10))
+```

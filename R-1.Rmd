@@ -1,0 +1,119 @@
+---
+title: "ST2195 Coursework Part 1"
+author: "Shuayb Ibrahim"
+output: pdf_document
+---
+
+```{r}
+# imports
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(grid)
+```
+
+## 1a - Monte Carlo Markov Chain
+
+#### Defining Target Distribution
+
+```{r}
+# Target Distribution
+f <- function(x) {
+  return((1/2) * exp(-abs(x)))
+}
+```
+
+#### Random Walk Metropolis Algorithm
+
+```{r}
+metropolis <- function(N,s) {
+  samples <- list(runif(1))
+
+  for (i in 1:N-1) {
+    #sample candidate from normal distribution
+    last_sample <- samples[[length(samples)]]
+    candidate <- rnorm(1,mean = last_sample,sd = s)
+    log_r <- log(f(candidate)) - log(f(last_sample))
+    log_u <- log(runif(1))
+    
+    #accept or reject calculated probability
+    if (log_u < log_r) {
+      samples <- c(samples,candidate)
+    }
+    else{
+      samples <- c(samples,last_sample)
+    }
+  }
+  
+  return(samples)
+}
+```
+
+#### Histogram with KDE plot
+
+```{r}
+N<-10000
+s<-1
+
+samples <-  data.frame(metropolis(N,s)) 
+data <- samples |>  pivot_longer(cols = starts_with("X"),names_to = "X",values_to = "Values")
+```
+
+```{r}
+hist <- ggplot(data, aes(x=Values)) +
+  geom_histogram(aes(y=after_stat(density),fill='Histogram'), bins = 30) + 
+  geom_density(aes(color='Kernel Density Estimation')) + stat_function(fun = f, aes(color='Target Distribution')) + scale_fill_manual(values = c('Histogram' = '#ffc966')) + scale_color_manual(values=c('Kernel Density Estimation'='red','Target Distribution'='blue')) + labs(title="Histogram with Kernel Density Estimation and Target Distribution Overlay", x = 'x', y = 'Density', color="Distributions", fill=NULL) + theme(plot.title = element_text(size=10))
+```
+
+```{r}
+avg <- mean(data$Values)
+std <- sd(data$Values)
+label <- paste(sprintf(" Monte Carlo Mean Estimate: %.7f", avg),"\n",sprintf("Monte Carlo St Dev Estimate: %.7f" ,std))
+  
+plot <- hist + annotation_custom(grob = textGrob(label = label, gp = gpar(fontsize = 7,fontface='bold'), x = 0.005, y = 0.975, hjust = 0, vjust = 1))
+
+print(plot)
+```
+
+## 1b - R hat Value
+
+```{r}
+#Function calculating R hat
+r_hat <- function(s){
+  J <- 4
+  N <- 2000
+  
+  sequences <- matrix(nrow = N, ncol = J)
+  
+  for (x in 1:J) {
+    sample <- metropolis(N,s)
+    for (y in 1:N) {
+      sequences[y,x] <- sample[[y]]
+    }
+  }
+  
+  Mj <- colMeans(sequences)
+  Vj <- apply(X = sequences, MARGIN = 2, FUN = var)
+  
+  W <- mean(Vj)
+    
+  M <- mean(Mj)
+  B <- N * var(Mj)
+  var_hat <- ((N-1)/N) * W + (B/N)
+  r_hat <- sqrt(var_hat / W)
+  return(r_hat)
+}
+```
+
+```{r}
+s_vals <- seq(from = 0.001, to = 1, length.out = 100)
+r_vals <- sapply(X = s_vals, FUN = r_hat)
+vals <- data_frame(s_vals,r_vals)
+r <- expression(hat(R))
+
+plot <- ggplot(vals, aes(x=s_vals,y=r_vals)) + geom_line() + labs(title=bquote(hat(R)*" values over a range of Standard Deviations"), x= "Standard Deviations", y=bquote(hat(R)*" values")) + theme(title = element_text(size=12))
+```
+
+```{r}
+plot
+```
